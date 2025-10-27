@@ -57,14 +57,20 @@ engine:                            # Engine settings.
       max_score_difference: 50     # Only for move_quality: "good". The maximum score difference (in cp) between the best move and the other moves.
       min_depth: 20
       min_knodes: 0
-    lichess_opening_explorer:
-      enabled: false
+   lichess_opening_explorer:
+      enabled: true
       min_time: 20
-      max_time: 10800              # Maximum starting game time (in seconds) the bot must have to use the lichess opening explorer.
-      source: "masters"            # One of "lichess", "masters", "player"
+      source: "lichess"            # One of "lichess", "masters", "player"
+      opening: "Queen's Pawn Game: Accelerated London System"         # An ECO official opening name
       player_name: ""              # The lichess username. Leave empty for the bot's username to be used. Used only when source is "player".
-      sort: "winrate"              # One of "winrate", "games_played"
+      sort: "games_played"              # One of "winrate", "games_played"
       min_games: 10                # Minimum number of times a move must have been played to be chosen.
+      elo_enabled: true            # Only for source = lichess
+      elo: 1200                    # Comma separated list of ratings groups to filter by. Each group ranges from its value to the next higher group in the enum (0 from 0 to 999, 1000 from 1000 to 1199, ..., 2500 from 2500 to any rating above). (one or more of 0 1000 1200 1400 1600 1800 2000 2200 2500)
+      speeds_enabled: true         # Only for source = lichess
+      speeds: "rapid"              # One or more (comma separated, no spaces) of "blitz", "bullet", "rapid", or "classical"
+      min_weight: 1                # Does not select moves with weight below min_weight (min 0, max: 100 if normalization isn't "none" else 65535).
+      selection: "weighted_random" # Move selection is one of "weighted_random", "uniform_random", or "best_move" (but not below the min_weight in the 2nd and 3rd case).
     online_egtb:
       enabled: false               # Whether or not to enable online endgame tablebases.
       min_time: 20                 # Minimum time (in seconds) the bot must have to use online EGTBs.

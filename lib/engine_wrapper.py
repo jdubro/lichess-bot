@@ -13,6 +13,8 @@ import time
 import random
 import math
 import contextlib
+import pickle
+from random import random
 from collections import Counter
 from collections.abc import Callable
 from lib import model, lichess
@@ -30,6 +32,10 @@ from types import TracebackType
 logger = logging.getLogger(__name__)
 
 out_of_online_opening_book_moves: Counter[str] = Counter()
+
+# ** find a better place for this
+with open(r'C:\Users\jldub\Chess\OpeningDictionary.pickle', 'rb') as handle:
+    opening_dict = pickle.load(handle)
 
 
 def create_engine(engine_config: Configuration, game: model.Game | None = None) -> EngineWrapper:
@@ -929,6 +935,12 @@ def get_opening_explorer_move(li: lichess.Lichess, board: chess.Board, game: mod
     min_time = seconds(opening_explorer_cfg.min_time)
     max_time = seconds(opening_explorer_cfg.max_time)
     source = opening_explorer_cfg.source
+        opening = opening_explorer_cfg.opening
+    elo_enabled = opening_explorer_cfg.elo_enabled
+    elo = opening_explorer_cfg.elo
+    speeds_enabled = opening_explorer_cfg.speeds_enabled
+    speeds = opening_explorer_cfg.speeds
+    selection = opening_explorer_cfg.selection
     if (not opening_explorer_cfg.enabled or time_left < min_time or game.clock_initial > max_time or source == "master"
             and board.uci_variant != "chess"):
         return None, {}
@@ -952,8 +964,31 @@ def get_opening_explorer_move(li: lichess.Lichess, board: chess.Board, game: mod
             comment = {"string": "lichess-bot-source:Lichess Opening Explorer (Player)"}
         else:
             params = {"fen": board.fen(), "moves": 100, "variant": variant, "topGames": 0, "recentGames": 0}
+            if elo_enabled: params["ratings"] = elo
+            if speeds_enabled: params["speeds"] = speeds
             response = li.online_book_get("https://explorer.lichess.ovh/lichess", params)
             comment = {"string": "lichess-bot-source:Lichess Opening Explorer (Lichess)"}
+        
+        if opening != '':
+            selected_opening = opening_dict[opening]['move_order_uci'].split(', ')
+            turn0 = len(board.move_stack) == 0
+            num_moves = len(game.state['moves'].split(' '))
+
+            if num_moves < len(selected_opening):  # opening not finished
+                if turn0:
+                    selected_move = selected_opening[0]
+                    logger.info(f"Got the next move, {selected_move}, from lichess opening explorer"
+                                f" for game {game.id}")
+                    return selected_move, comment
+                else:
+                    last_opp_move = str(board.move_stack[-1])
+                    if last_opp_move == selected_opening[num_moves - 1]:  # previous move made by opp still in opening
+                        selected_move = selected_opening[num_moves]
+                        logger.info(f"Got the next move, {selected_move}, from lichess opening explorer"
+                                    f" for game {game.id}")
+                        return selected_move, comment
+
+        # will only run if we didn't get a move from the opening repertoire
         moves = []
         for possible_move in response["moves"]:
             games_played = possible_move["white"] + possible_move["black"] + possible_move["draws"]
@@ -963,14 +998,36 @@ def get_opening_explorer_move(li: lichess.Lichess, board: chess.Board, game: mod
             if games_played >= opening_explorer_cfg.min_games:
                 # We add both winrate and games_played to the tuple, so that if 2 moves are tied on the first metric,
                 # the second one will be used.
-                moves.append((winrate if opening_explorer_cfg.sort == "winrate" else games_played,
-                              games_played if opening_explorer_cfg.sort == "winrate" else winrate, possible_move["uci"]))
-        moves.sort(reverse=True)
-        move = moves[0][2]
-        logger.info(f"Got move {move} from lichess opening explorer ({opening_explorer_cfg.sort}: {moves[0][0]})"
+                #moves.append((winrate if opening_explorer_cfg.sort == "winrate" else games_played,
+                #              games_played if opening_explorer_cfg.sort == "winrate" else winrate, possible_move["uci"]))
+                moves.append([games_played, possible_move['uci']])
+                
+        
+        total_games_played = sum([x[0] for x in moves])
+        moves = [[x[0] / total_games_played, x[1]] for x in moves]  # normalize the games played to be a percentage of the total games played
+
+        if selection == "weighted_random":
+            rand_num = random()
+
+            current_sum = 0
+            num_moves = 0
+            for move in moves:
+                num_moves += 1
+                current_sum += move[0]
+                if current_sum > rand_num:
+                    selected_move = move[1]
+                    selected_play_pct = move[0]
+                    break
+        # elif selection == "uniform_random":
+        #     move = reader.choice(board, minimum_weight=min_weight).move
+        # elif selection == "best_move":
+        #     move = reader.find(board, minimum_weight=min_weight).move
+        # moves.sort(reverse=True)
+        # move = moves[0][2]
+        logger.info(f"Got the number {num_moves} most popular move, {selected_move}, from lichess opening explorer (Play pct: {selected_play_pct})"
                     f" for game {game.id}")
 
-    return move, comment
+        return selected_move, comment
 
 
 def get_online_egtb_move(li: lichess.Lichess, board: chess.Board, game: model.Game, online_egtb_cfg: Configuration
